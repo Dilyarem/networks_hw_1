@@ -31,6 +31,10 @@ class Segment:
         ack = int.from_bytes(data[4:8], "big")
         return Segment(seq, ack, data[8:])
 
+
+HEADER_SIZE = 8
+MAX_DATA_SIZE = 2**15 - 8
+
 class MyTCPProtocol(UDPBasedProtocol):
     def __init__(self, *args, **kwargs):
         self.seq_num = 0
@@ -40,16 +44,20 @@ class MyTCPProtocol(UDPBasedProtocol):
         self.udp_socket.settimeout(0.01)
 
     def send(self, data: bytes):
-        segment = Segment(self.seq_num, self.ack_num, data)
-        self.seq_num += len(segment.data)
-        self.sendto(segment.dumps())
-        while True:
-            try:
-                answer = Segment.loads(self.recvfrom(8))
-                if answer.ack_num >= self.seq_num:
-                    break
-            except socket.error:
-                self.sendto(segment.dumps())
+        bytes_sent = 0
+        while bytes_sent < len(data):
+            max_size = min(len(data), MAX_DATA_SIZE - 8 + bytes_sent)
+            segment = Segment(self.seq_num, self.ack_num, data[bytes_sent: max_size])
+            self.seq_num += len(segment.data)
+            self.sendto(segment.dumps())
+            bytes_sent = max_size
+            while True:
+                try:
+                    answer = Segment.loads(self.recvfrom(8))
+                    if answer.ack_num >= self.seq_num:
+                        break
+                except socket.error:
+                    self.sendto(segment.dumps())
 
         return len(data)
 
